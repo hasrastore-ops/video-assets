@@ -243,28 +243,31 @@ Terima kasih.`;
             // Use WhatsApp Business URL format
             const whatsappUrl = `https://wa.me/${formattedPhone}?text=${encodedMessage}`;
             
-            // Try opening in new tab
-            const newWindow = window.open(whatsappUrl, '_blank');
+            // Create a temporary link element and trigger a click
+            const link = document.createElement('a');
+            link.href = whatsappUrl;
+            link.target = '_blank';
+            link.rel = 'noopener noreferrer';
             
-            // If pop-up is blocked, inform the user
-            if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
-                showNotification('WhatsApp pop-up blocked. Please allow pop-ups and try again.');
-                
-                // Create a temporary link element and trigger a click
-                const link = document.createElement('a');
-                link.href = whatsappUrl;
-                link.target = '_blank';
-                link.rel = 'noopener noreferrer';
-                
-                // Trigger the click
-                document.body.appendChild(link);
-                link.click();
+            // Add to DOM and click
+            document.body.appendChild(link);
+            link.click();
+            
+            // Remove from DOM after a short delay
+            setTimeout(() => {
                 document.body.removeChild(link);
-            }
+            }, 100);
+            
+            // Show notification
+            showNotification('Opening WhatsApp...');
         }
         
         // Show notification
         function showNotification(message) {
+            // Remove existing notifications
+            const existingNotifications = document.querySelectorAll('.notification');
+            existingNotifications.forEach(n => n.remove());
+            
             const notification = document.createElement('div');
             notification.className = 'notification';
             notification.textContent = message;
@@ -273,7 +276,7 @@ Terima kasih.`;
             
             // Auto-remove notification after 5 seconds
             setTimeout(() => {
-                document.body.removeChild(notification);
+                notification.remove();
             }, 5000);
         }
         
@@ -309,14 +312,27 @@ Terima kasih.`;
             renderOrders(currentTab);
         }
         
+        // Get order by ID
+        function getOrderById(orderId) {
+            // First check in orders
+            let order = orders.find(o => o.id === orderId);
+            if (order) return order;
+            
+            // Then check in clickedOrders
+            return clickedOrders.find(o => o.id === orderId);
+        }
+        
         // Handle WhatsApp confirmation
         function handleWhatsAppConfirmation(orderId) {
-            const orderCard = document.querySelector(`[data-order-id="${orderId}"]`);
-            if (!orderCard) return;
+            const order = getOrderById(orderId);
+            if (!order) {
+                console.error('Order not found');
+                showNotification('Order not found. Please refresh and try again.');
+                return;
+            }
             
             try {
-                const orderData = JSON.parse(orderCard.getAttribute('data-order'));
-                sendWhatsAppMessage(orderData.phone, orderData.message);
+                sendWhatsAppMessage(order.phoneNumber, generateWhatsAppMessage(order));
                 confirmOrder(orderId);
             } catch (error) {
                 console.error('Error handling WhatsApp confirmation:', error);
@@ -338,41 +354,32 @@ Terima kasih.`;
             // Sort orders by ID (newest first)
             const sortedOrders = [...targetOrders].sort((a, b) => b.id.localeCompare(a.id));
             
-            ordersContainer.innerHTML = sortedOrders.map(order => {
-                // Create a data attribute with the order info
-                const orderData = {
-                    phone: order.phoneNumber,
-                    message: generateWhatsAppMessage(order),
-                    id: order.id
-                };
-                
-                return `
-                    <div class="order-card" data-order-id="${order.id}" data-order='${JSON.stringify(orderData)}'>
-                        <div class="order-info">
-                            <div class="order-details">
-                                <h3>${order.customerName}</h3>
-                                <p><strong>Order #:</strong> <span class="order-number">${order.id}</span></p>
-                                <p><strong>Phone:</strong> ${order.phoneNumber}</p>
-                                <p><strong>Product:</strong> ${order.productName}</p>
-                                <p><strong>Quantity:</strong> ${order.quantity}</p>
-                                <p><strong>Amount:</strong> ${order.amount}</p>
-                                <p><strong>Time:</strong> <span class="time-stamp">${order.time}</span></p>
-                                <p><strong>Status:</strong> ${order.confirmed ? '<span class="status">Confirmed</span>' : 'Pending'}</p>
-                            </div>
-                            <div>
-                                ${!order.confirmed ? `
-                                    <button class="confirm-btn" onclick="handleWhatsAppConfirmation('${order.id}')">
-                                        WS Confirmation
-                                    </button>
-                                    <button class="delete-btn" onclick="deleteOrder('${order.id}', ${tab === 'clicked'})">
-                                        ❌ Delete
-                                    </button>
-                                ` : ''}
-                            </div>
+            ordersContainer.innerHTML = sortedOrders.map(order => `
+                <div class="order-card" data-order-id="${order.id}">
+                    <div class="order-info">
+                        <div class="order-details">
+                            <h3>${order.customerName}</h3>
+                            <p><strong>Order #:</strong> <span class="order-number">${order.id}</span></p>
+                            <p><strong>Phone:</strong> ${order.phoneNumber}</p>
+                            <p><strong>Product:</strong> ${order.productName}</p>
+                            <p><strong>Quantity:</strong> ${order.quantity}</p>
+                            <p><strong>Amount:</strong> ${order.amount}</p>
+                            <p><strong>Time:</strong> <span class="time-stamp">${order.time}</span></p>
+                            <p><strong>Status:</strong> ${order.confirmed ? '<span class="status">Confirmed</span>' : 'Pending'}</p>
+                        </div>
+                        <div>
+                            ${!order.confirmed ? `
+                                <button class="confirm-btn" onclick="handleWhatsAppConfirmation('${order.id}')">
+                                    WS Confirmation
+                                </button>
+                                <button class="delete-btn" onclick="deleteOrder('${order.id}', ${tab === 'clicked'})">
+                                    ❌ Delete
+                                </button>
+                            ` : ''}
                         </div>
                     </div>
-                `;
-            }).join('');
+                </div>
+            `).join('');
         }
         
         // Switch between tabs
