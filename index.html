@@ -243,7 +243,7 @@ Terima kasih.`;
             if (orderIndex !== -1) {
                 const confirmedOrder = orders.splice(orderIndex, 1)[0];
                 confirmedOrder.confirmed = true;
-                clickedOrders.push(confirmedOrder);
+                clickedOrders.unshift(confirmedOrder); // Add to beginning of array
                 renderOrders(currentTab);
             }
         }
@@ -275,7 +275,10 @@ Terima kasih.`;
                 return;
             }
             
-            ordersContainer.innerHTML = targetOrders.map(order => `
+            // Sort orders by ID (newest first)
+            const sortedOrders = [...targetOrders].sort((a, b) => b.id.localeCompare(a.id));
+            
+            ordersContainer.innerHTML = sortedOrders.map(order => `
                 <div class="order-card" data-order-id="${order.id}">
                     <div class="order-info">
                         <div class="order-details">
