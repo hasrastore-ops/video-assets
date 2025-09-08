@@ -220,23 +220,30 @@ Terima kasih.`;
             return cleanNumber.startsWith('60') ? cleanNumber : `60${cleanNumber}`;
         }
         
-        // Send WhatsApp message
+        // Send WhatsApp message using WhatsApp Business
         function sendWhatsAppMessage(phone, message) {
             const formattedPhone = formatPhoneNumber(phone);
             const encodedMessage = encodeURIComponent(message);
-            window.open(`https://wa.me/${formattedPhone}?text=${encodedMessage}`, '_blank');
+            
+            // Use WhatsApp Business URL format
+            const whatsappUrl = `https://wa.me/${formattedPhone}?text=${encodedMessage}`;
+            
+            // Try opening in new tab first (works best for most devices)
+            window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
+            
+            // Fallback for cases where new tab doesn't work
+            setTimeout(() => {
+                window.location.href = whatsappUrl;
+            }, 500);
         }
         
         // Confirm order function
         function confirmOrder(orderId) {
             const orderIndex = orders.findIndex(order => order.id === orderId);
             if (orderIndex !== -1) {
-                // Move order to clicked orders
                 const confirmedOrder = orders.splice(orderIndex, 1)[0];
                 confirmedOrder.confirmed = true;
                 clickedOrders.push(confirmedOrder);
-                
-                // Re-render both tabs
                 renderOrders(currentTab);
             }
         }
