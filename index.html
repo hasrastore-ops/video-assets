@@ -112,6 +112,22 @@
             padding: 40px;
             color: #666;
         }
+        .notification {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background-color: #28a745;
+            color: white;
+            padding: 10px 15px;
+            border-radius: 5px;
+            z-index: 1000;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            animation: fadeIn 0.3s ease;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
     </style>
 </head>
 <body>
@@ -129,7 +145,6 @@
         
         <div id="orders-container"></div>
     </div>
-
     <script>
         // Configuration
         const TELEGRAM_BOT_TOKEN = '8335290193:AAEADQ1u2MhL0RfuJc-wU5QtJ2coz6m4UKM';
@@ -228,23 +243,53 @@ Terima kasih.`;
             // Use WhatsApp Business URL format
             const whatsappUrl = `https://wa.me/${formattedPhone}?text=${encodedMessage}`;
             
-            // Try opening in new tab first (works best for most devices)
-            window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
+            // Try opening in new tab
+            const newWindow = window.open(whatsappUrl, '_blank');
             
-            // Fallback for cases where new tab doesn't work
+            // If pop-up is blocked, inform the user
+            if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
+                showNotification('WhatsApp pop-up blocked. Please allow pop-ups and try again.');
+                
+                // Create a temporary link element and trigger a click
+                const link = document.createElement('a');
+                link.href = whatsappUrl;
+                link.target = '_blank';
+                link.rel = 'noopener noreferrer';
+                
+                // Trigger the click
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            }
+        }
+        
+        // Show notification
+        function showNotification(message) {
+            const notification = document.createElement('div');
+            notification.className = 'notification';
+            notification.textContent = message;
+            
+            document.body.appendChild(notification);
+            
+            // Auto-remove notification after 5 seconds
             setTimeout(() => {
-                window.location.href = whatsappUrl;
-            }, 500);
+                document.body.removeChild(notification);
+            }, 5000);
         }
         
         // Confirm order function
         function confirmOrder(orderId) {
             const orderIndex = orders.findIndex(order => order.id === orderId);
             if (orderIndex !== -1) {
-                const confirmedOrder = orders.splice(orderIndex, 1)[0];
+                const confirmedOrder = orders[orderIndex];
                 confirmedOrder.confirmed = true;
-                clickedOrders.unshift(confirmedOrder); // Add to beginning of array
-                renderOrders(currentTab);
+                
+                // Move to clickedOrders after a short delay to ensure WhatsApp has time to open
+                setTimeout(() => {
+                    orders.splice(orderIndex, 1);
+                    clickedOrders.unshift(confirmedOrder);
+                    renderOrders(currentTab);
+                }, 1000);
             }
         }
         
@@ -264,6 +309,21 @@ Terima kasih.`;
             renderOrders(currentTab);
         }
         
+        // Handle WhatsApp confirmation
+        function handleWhatsAppConfirmation(orderId) {
+            const orderCard = document.querySelector(`[data-order-id="${orderId}"]`);
+            if (!orderCard) return;
+            
+            try {
+                const orderData = JSON.parse(orderCard.getAttribute('data-order'));
+                sendWhatsAppMessage(orderData.phone, orderData.message);
+                confirmOrder(orderId);
+            } catch (error) {
+                console.error('Error handling WhatsApp confirmation:', error);
+                showNotification('Error sending WhatsApp message. Please try again.');
+            }
+        }
+        
         // Render orders based on current tab
         function renderOrders(tab) {
             const targetOrders = tab === 'live' ? orders : clickedOrders;
@@ -278,32 +338,41 @@ Terima kasih.`;
             // Sort orders by ID (newest first)
             const sortedOrders = [...targetOrders].sort((a, b) => b.id.localeCompare(a.id));
             
-            ordersContainer.innerHTML = sortedOrders.map(order => `
-                <div class="order-card" data-order-id="${order.id}">
-                    <div class="order-info">
-                        <div class="order-details">
-                            <h3>${order.customerName}</h3>
-                            <p><strong>Order #:</strong> <span class="order-number">${order.id}</span></p>
-                            <p><strong>Phone:</strong> ${order.phoneNumber}</p>
-                            <p><strong>Product:</strong> ${order.productName}</p>
-                            <p><strong>Quantity:</strong> ${order.quantity}</p>
-                            <p><strong>Amount:</strong> ${order.amount}</p>
-                            <p><strong>Time:</strong> <span class="time-stamp">${order.time}</span></p>
-                            <p><strong>Status:</strong> ${order.confirmed ? '<span class="status">Confirmed</span>' : 'Pending'}</p>
-                        </div>
-                        <div>
-                            ${!order.confirmed ? `
-                                <button class="confirm-btn" onclick="sendWhatsAppMessage('${order.phoneNumber}', '${generateWhatsAppMessage(order)}'); confirmOrder('${order.id}')">
-                                    WS Confirmation
-                                </button>
-                                <button class="delete-btn" onclick="deleteOrder('${order.id}', ${tab === 'clicked'})">
-                                    ❌ Delete
-                                </button>
-                            ` : ''}
+            ordersContainer.innerHTML = sortedOrders.map(order => {
+                // Create a data attribute with the order info
+                const orderData = {
+                    phone: order.phoneNumber,
+                    message: generateWhatsAppMessage(order),
+                    id: order.id
+                };
+                
+                return `
+                    <div class="order-card" data-order-id="${order.id}" data-order='${JSON.stringify(orderData)}'>
+                        <div class="order-info">
+                            <div class="order-details">
+                                <h3>${order.customerName}</h3>
+                                <p><strong>Order #:</strong> <span class="order-number">${order.id}</span></p>
+                                <p><strong>Phone:</strong> ${order.phoneNumber}</p>
+                                <p><strong>Product:</strong> ${order.productName}</p>
+                                <p><strong>Quantity:</strong> ${order.quantity}</p>
+                                <p><strong>Amount:</strong> ${order.amount}</p>
+                                <p><strong>Time:</strong> <span class="time-stamp">${order.time}</span></p>
+                                <p><strong>Status:</strong> ${order.confirmed ? '<span class="status">Confirmed</span>' : 'Pending'}</p>
+                            </div>
+                            <div>
+                                ${!order.confirmed ? `
+                                    <button class="confirm-btn" onclick="handleWhatsAppConfirmation('${order.id}')">
+                                        WS Confirmation
+                                    </button>
+                                    <button class="delete-btn" onclick="deleteOrder('${order.id}', ${tab === 'clicked'})">
+                                        ❌ Delete
+                                    </button>
+                                ` : ''}
+                            </div>
                         </div>
                     </div>
-                </div>
-            `).join('');
+                `;
+            }).join('');
         }
         
         // Switch between tabs
