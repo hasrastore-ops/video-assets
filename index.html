@@ -1,0 +1,201 @@
+!DOCTYPE html
+html lang=en
+head
+    meta charset=UTF-8
+    meta name=viewport content=width=device-width, initial-scale=1.0
+    titleHasra Store COD Orderstitle
+    style
+        body {
+            font-family Arial, sans-serif;
+            background-color #f5f5f5;
+            margin 0;
+            padding 20px;
+        }
+
+        .container {
+            max-width 800px;
+            margin 0 auto;
+        }
+
+        header {
+            text-align center;
+            margin-bottom 30px;
+        }
+
+        .order-card {
+            background white;
+            border-radius 8px;
+            padding 20px;
+            margin-bottom 15px;
+            box-shadow 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .order-info {
+            display flex;
+            justify-content space-between;
+            align-items center;
+        }
+
+        .order-details {
+            flex-grow 1;
+        }
+
+        .confirm-btn {
+            background-color #007bff;
+            color white;
+            border none;
+            padding 10px 20px;
+            border-radius 5px;
+            cursor pointer;
+            margin-top 10px;
+        }
+
+        .confirm-btnhover {
+            background-color #0056b3;
+        }
+
+        .status {
+            color #28a745;
+            font-weight bold;
+        }
+
+        .loading {
+            text-align center;
+            padding 50px;
+            font-size 18px;
+        }
+    style
+head
+body
+    div class=container
+        header
+            h1Hasra Store COD Ordersh1
+        header
+        
+        div id=orders-containerdiv
+    div
+
+    script
+         Configuration
+        const TELEGRAM_BOT_TOKEN = '8335290193AAEADQ1u2MhL0RfuJc-wU5QtJ2coz6m4UKM';
+        const TELEGRAM_CHAT_ID = '642142575';
+        const MY_PHONE_NUMBER = '601127412402';
+
+         DOM elements
+        const ordersContainer = document.getElementById('orders-container');
+
+         Function to fetch orders from Telegram
+        async function fetchOrders() {
+            try {
+                const response = await fetch(`httpsapi.telegram.orgbot${TELEGRAM_BOT_TOKEN}getUpdateschat_id=${TELEGRAM_CHAT_ID}&limit=100&allowed_updates=[message]`);
+                const data = await response.json();
+                
+                return data.result
+                    .map(update = update.message)
+                    .filter(msg = msg.text.includes('PESANAN BARU'))
+                    .map(parseOrderFromMessage);
+            } catch (error) {
+                console.error('Error fetching orders', error);
+                return [];
+            }
+        }
+
+         Parse order information from Telegram message
+        function parseOrderFromMessage(message) {
+            const text = message.text;
+            
+            return {
+                id message.message_id.toString(),
+                productName extractField(text, 'PRODUK'),
+                quantity parseInt(extractField(text, 'KUANTITI')),
+                amount extractField(text, 'JUMLAH'),
+                customerName extractField(text, 'Nama'),
+                phoneNumber extractField(text, 'No Telefon'),
+                address extractField(text, 'Alamat'),
+                postcode extractField(text, 'Poskod'),
+                state extractField(text, 'Negeri'),
+                paymentType extractField(text, 'JENIS PEMBAYARAN'),
+                time extractField(text, 'MASA'),
+                confirmed false
+            };
+        }
+
+         Helper to extract fields from message
+        function extractField(text, field) {
+            const pattern = new RegExp(`(${field}s)([^n]+)`,'gi');
+            const match = pattern.exec(text);
+            return match  match[2].trim()  '';
+        }
+
+         Generate WhatsApp message
+        function generateWhatsAppMessage(order) {
+            return `📢 PENGESAHAN PESANAN COD 📢
+
+AssalamualaikumSalam Sejahtera ${order.customerName},
+
+Kami telah menerima pesanan anda seperti berikut
+📦 Produk ${order.productName}
+🔢 Kuantiti ${order.quantity}
+💰 Jumlah ${order.amount}
+🏠 Alamat Penghantaran
+${order.address}
+
+⚠️ Ini adalah pesanan Bayar Tunai Semasa Penghantaran (COD).
+Sila balas 'YA' atau 'YES' untuk mengesahkan pesanan ini.
+⏰ Sila sahkan dalam masa 24 jam.
+
+Terima kasih.`;
+        }
+
+         Format phone number for WhatsApp
+        function formatPhoneNumber(phone) {
+            const cleanNumber = phone.replace(Dg, '');
+            return cleanNumber.startsWith('60')  cleanNumber  `60${cleanNumber}`;
+        }
+
+         Send WhatsApp message
+        function sendWhatsAppMessage(phone, message) {
+            const formattedPhone = formatPhoneNumber(phone);
+            const encodedMessage = encodeURIComponent(message);
+            window.open(`httpswa.me${formattedPhone}text=${encodedMessage}`, '_blank');
+        }
+
+         Render orders on the page
+        function renderOrders(orders) {
+            if (orders.length === 0) {
+                ordersContainer.innerHTML = 'pNo orders foundp';
+                return;
+            }
+
+            ordersContainer.innerHTML = orders.map(order = `
+                div class=order-card
+                    div class=order-info
+                        div class=order-details
+                            h3${order.customerName}h3
+                            pstrongPhonestrong ${order.phoneNumber}p
+                            pstrongProductstrong ${order.productName}p
+                            pstrongQuantitystrong ${order.quantity}p
+                            pstrongAmountstrong ${order.amount}p
+                            pstrongStatusstrong ${order.confirmed  'span class=statusConfirmedspan'  'Pending'}p
+                        div
+                        div
+                            ${!order.confirmed  `button class=confirm-btn onclick=sendWhatsAppMessage('${order.phoneNumber}', '${generateWhatsAppMessage(order)}')WS Confirmationbutton`  ''}
+                        div
+                    div
+                div
+            `).join('');
+        }
+
+         Load orders initially and refresh periodically
+        async function loadOrders() {
+            ordersContainer.innerHTML = 'div class=loadingLoading orders...div';
+            const orders = await fetchOrders();
+            renderOrders(orders);
+        }
+
+         Initialize the app
+        loadOrders();
+        setInterval(loadOrders, 30000);  Refresh every 30 seconds
+    script
+body
+html
