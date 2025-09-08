@@ -270,14 +270,17 @@
         function generateWhatsAppMessage(order) {
             return `📢 PENGESAHAN PESANAN COD 📢
 Assalamualaikum/Salam Sejahtera ${order.customerName},
+
 Kami telah menerima pesanan anda seperti berikut:
 📦 Produk: ${order.productName}
 🔢 Kuantiti: ${order.quantity}
 💰 Jumlah: ${order.amount}
 🏠 Alamat Penghantaran:
 ${order.address}
+
 ⚠️ Ini adalah pesanan Bayar Tunai Semasa Penghantaran (COD).
 Sila balas 'YA' atau 'YES' untuk mengesahkan pesanan ini.
+
 ⏰ Sila sahkan dalam masa 24 jam.
 Terima kasih.`;
         }
