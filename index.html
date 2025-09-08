@@ -1,201 +1,319 @@
-!DOCTYPE html
-html lang=en
-head
-    meta charset=UTF-8
-    meta name=viewport content=width=device-width, initial-scale=1.0
-    titleHasra Store COD Orderstitle
-    style
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hasra Store COD Orders</title>
+    <style>
         body {
-            font-family Arial, sans-serif;
-            background-color #f5f5f5;
-            margin 0;
-            padding 20px;
+            font-family: Arial, sans-serif;
+            background-color: #f5f5f5;
+            margin: 0;
+            padding: 20px;
         }
-
         .container {
-            max-width 800px;
-            margin 0 auto;
+            max-width: 800px;
+            margin: 0 auto;
         }
-
         header {
-            text-align center;
-            margin-bottom 30px;
+            text-align: center;
+            margin-bottom: 30px;
         }
-
+        .tabs {
+            display: flex;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #ddd;
+        }
+        .tab {
+            flex: 1;
+            text-align: center;
+            padding: 10px 20px;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: all 0.3s ease;
+        }
+        .tab.active {
+            border-bottom: 2px solid #007bff;
+            color: #007bff;
+            font-weight: bold;
+        }
         .order-card {
-            background white;
-            border-radius 8px;
-            padding 20px;
-            margin-bottom 15px;
-            box-shadow 0 2px 4px rgba(0,0,0,0.1);
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            position: relative;
         }
-
         .order-info {
-            display flex;
-            justify-content space-between;
-            align-items center;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
-
         .order-details {
-            flex-grow 1;
+            flex-grow: 1;
         }
-
         .confirm-btn {
-            background-color #007bff;
-            color white;
-            border none;
-            padding 10px 20px;
-            border-radius 5px;
-            cursor pointer;
-            margin-top 10px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-top: 10px;
+            transition: all 0.3s ease;
         }
-
-        .confirm-btnhover {
-            background-color #0056b3;
+        .confirm-btn:hover {
+            background-color: #0056b3;
         }
-
+        .confirm-btn.confirmed {
+            background-color: #28a745;
+        }
         .status {
-            color #28a745;
-            font-weight bold;
+            color: #28a745;
+            font-weight: bold;
         }
-
+        .delete-btn {
+            background-color: #dc3545;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-left: 10px;
+        }
+        .refresh-btn {
+            background-color: #17a2b8;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-bottom: 20px;
+        }
+        .refresh-btn:hover {
+            background-color: #138496;
+        }
         .loading {
-            text-align center;
-            padding 50px;
-            font-size 18px;
+            text-align: center;
+            padding: 50px;
+            font-size: 18px;
         }
-    style
-head
-body
-    div class=container
-        header
-            h1Hasra Store COD Ordersh1
-        header
+        .order-number {
+            font-weight: bold;
+            color: #007bff;
+        }
+        .time-stamp {
+            font-size: 0.85em;
+            color: #666;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Hasra Store COD Orders</h1>
+        </header>
         
-        div id=orders-containerdiv
-    div
+        <div class="tabs">
+            <div class="tab active" onclick="switchTab('live')">🔴 Live Orders</div>
+            <div class="tab" onclick="switchTab('clicked')">✅ Clicked Orders</div>
+        </div>
+        
+        <button class="refresh-btn" onclick="loadOrders()">🔄 Refresh Orders</button>
+        
+        <div id="orders-container"></div>
+    </div>
 
-    script
-         Configuration
-        const TELEGRAM_BOT_TOKEN = '8335290193AAEADQ1u2MhL0RfuJc-wU5QtJ2coz6m4UKM';
+    <script>
+        // Configuration
+        const TELEGRAM_BOT_TOKEN = '8335290193:AAEADQ1u2MhL0RfuJc-wU5QtJ2coz6m4UKM';
         const TELEGRAM_CHAT_ID = '642142575';
         const MY_PHONE_NUMBER = '601127412402';
-
-         DOM elements
+        
+        // DOM elements
         const ordersContainer = document.getElementById('orders-container');
-
-         Function to fetch orders from Telegram
+        let currentTab = 'live';
+        let orders = [];
+        let clickedOrders = [];
+        
+        // Enhanced extraction function
+        function extractField(text, field) {
+            const patterns = [
+                `${field}:\\s*([^\\n]+)`,
+                `${field}\\s*:\\s*([^\\n]+)`,
+                `${field}\\s*-\\s*([^\\n]+)`
+            ];
+            
+            for (let pattern of patterns) {
+                const regex = new RegExp(pattern, 'gi');
+                const match = regex.exec(text);
+                if (match) return match[1].trim();
+            }
+            return '';
+        }
+        
+        // Function to fetch orders from Telegram
         async function fetchOrders() {
             try {
-                const response = await fetch(`httpsapi.telegram.orgbot${TELEGRAM_BOT_TOKEN}getUpdateschat_id=${TELEGRAM_CHAT_ID}&limit=100&allowed_updates=[message]`);
+                const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getUpdates?chat_id=${TELEGRAM_CHAT_ID}&limit=100&allowed_updates=["message"]`);
                 const data = await response.json();
                 
+                if (!data.result || !Array.isArray(data.result)) {
+                    return [];
+                }
+                
                 return data.result
-                    .map(update = update.message)
-                    .filter(msg = msg.text.includes('PESANAN BARU'))
+                    .map(update => update.message)
+                    .filter(msg => msg && msg.text && msg.text.includes('PESANAN BARU'))
                     .map(parseOrderFromMessage);
             } catch (error) {
-                console.error('Error fetching orders', error);
+                console.error('Error fetching orders:', error);
                 return [];
             }
         }
-
-         Parse order information from Telegram message
+        
+        // Parse order information from Telegram message
         function parseOrderFromMessage(message) {
-            const text = message.text;
+            const text = message.text || "";
             
             return {
-                id message.message_id.toString(),
-                productName extractField(text, 'PRODUK'),
-                quantity parseInt(extractField(text, 'KUANTITI')),
-                amount extractField(text, 'JUMLAH'),
-                customerName extractField(text, 'Nama'),
-                phoneNumber extractField(text, 'No Telefon'),
-                address extractField(text, 'Alamat'),
-                postcode extractField(text, 'Poskod'),
-                state extractField(text, 'Negeri'),
-                paymentType extractField(text, 'JENIS PEMBAYARAN'),
-                time extractField(text, 'MASA'),
-                confirmed false
+                id: message.message_id?.toString() || "unknown",
+                productName: extractField(text, 'PRODUK') || "No Product",
+                quantity: parseInt(extractField(text, 'KUANTITI')) || 1,
+                amount: extractField(text, 'JUMLAH') || "RM0",
+                customerName: extractField(text, 'Nama') || "No Name",
+                phoneNumber: extractField(text, 'No Telefon') || "0000000000",
+                address: extractField(text, 'Alamat') || "No Address",
+                postcode: extractField(text, 'Poskod') || "00000",
+                state: extractField(text, 'Negeri') || "No State",
+                paymentType: extractField(text, 'JENIS PEMBAYARAN') || "COD",
+                time: extractField(text, 'MASA') || new Date().toLocaleString(),
+                confirmed: false
             };
         }
-
-         Helper to extract fields from message
-        function extractField(text, field) {
-            const pattern = new RegExp(`(${field}s)([^n]+)`,'gi');
-            const match = pattern.exec(text);
-            return match  match[2].trim()  '';
-        }
-
-         Generate WhatsApp message
+        
+        // Generate WhatsApp message
         function generateWhatsAppMessage(order) {
             return `📢 PENGESAHAN PESANAN COD 📢
-
-AssalamualaikumSalam Sejahtera ${order.customerName},
-
-Kami telah menerima pesanan anda seperti berikut
-📦 Produk ${order.productName}
-🔢 Kuantiti ${order.quantity}
-💰 Jumlah ${order.amount}
-🏠 Alamat Penghantaran
+Assalamualaikum/Salam Sejahtera ${order.customerName},
+Kami telah menerima pesanan anda seperti berikut:
+📦 Produk: ${order.productName}
+🔢 Kuantiti: ${order.quantity}
+💰 Jumlah: ${order.amount}
+🏠 Alamat Penghantaran:
 ${order.address}
-
 ⚠️ Ini adalah pesanan Bayar Tunai Semasa Penghantaran (COD).
 Sila balas 'YA' atau 'YES' untuk mengesahkan pesanan ini.
 ⏰ Sila sahkan dalam masa 24 jam.
-
 Terima kasih.`;
         }
-
-         Format phone number for WhatsApp
+        
+        // Format phone number for WhatsApp
         function formatPhoneNumber(phone) {
-            const cleanNumber = phone.replace(Dg, '');
-            return cleanNumber.startsWith('60')  cleanNumber  `60${cleanNumber}`;
+            const cleanNumber = phone.replace(/\D/g, '');
+            return cleanNumber.startsWith('60') ? cleanNumber : `60${cleanNumber}`;
         }
-
-         Send WhatsApp message
+        
+        // Send WhatsApp message
         function sendWhatsAppMessage(phone, message) {
             const formattedPhone = formatPhoneNumber(phone);
             const encodedMessage = encodeURIComponent(message);
-            window.open(`httpswa.me${formattedPhone}text=${encodedMessage}`, '_blank');
+            window.open(`https://wa.me/${formattedPhone}?text=${encodedMessage}`, '_blank');
         }
-
-         Render orders on the page
-        function renderOrders(orders) {
-            if (orders.length === 0) {
-                ordersContainer.innerHTML = 'pNo orders foundp';
+        
+        // Confirm order function
+        function confirmOrder(orderId) {
+            const orderIndex = orders.findIndex(order => order.id === orderId);
+            if (orderIndex !== -1) {
+                // Move order to clicked orders
+                const confirmedOrder = orders.splice(orderIndex, 1)[0];
+                confirmedOrder.confirmed = true;
+                clickedOrders.push(confirmedOrder);
+                
+                // Re-render both tabs
+                renderOrders(currentTab);
+            }
+        }
+        
+        // Delete order function
+        function deleteOrder(orderId, isClicked = false) {
+            if (isClicked) {
+                const orderIndex = clickedOrders.findIndex(order => order.id === orderId);
+                if (orderIndex !== -1) {
+                    clickedOrders.splice(orderIndex, 1);
+                }
+            } else {
+                const orderIndex = orders.findIndex(order => order.id === orderId);
+                if (orderIndex !== -1) {
+                    orders.splice(orderIndex, 1);
+                }
+            }
+            renderOrders(currentTab);
+        }
+        
+        // Render orders based on current tab
+        function renderOrders(tab) {
+            const targetOrders = tab === 'live' ? orders : clickedOrders;
+            
+            if (targetOrders.length === 0) {
+                ordersContainer.innerHTML = `<div class="empty-state">
+                    <p>${tab === 'live' ? 'No live orders available' : 'No clicked orders yet'}</p>
+                </div>`;
                 return;
             }
-
-            ordersContainer.innerHTML = orders.map(order = `
-                div class=order-card
-                    div class=order-info
-                        div class=order-details
-                            h3${order.customerName}h3
-                            pstrongPhonestrong ${order.phoneNumber}p
-                            pstrongProductstrong ${order.productName}p
-                            pstrongQuantitystrong ${order.quantity}p
-                            pstrongAmountstrong ${order.amount}p
-                            pstrongStatusstrong ${order.confirmed  'span class=statusConfirmedspan'  'Pending'}p
-                        div
-                        div
-                            ${!order.confirmed  `button class=confirm-btn onclick=sendWhatsAppMessage('${order.phoneNumber}', '${generateWhatsAppMessage(order)}')WS Confirmationbutton`  ''}
-                        div
-                    div
-                div
+            
+            ordersContainer.innerHTML = targetOrders.map(order => `
+                <div class="order-card" data-order-id="${order.id}">
+                    <div class="order-info">
+                        <div class="order-details">
+                            <h3>${order.customerName}</h3>
+                            <p><strong>Order #:</strong> <span class="order-number">${order.id}</span></p>
+                            <p><strong>Phone:</strong> ${order.phoneNumber}</p>
+                            <p><strong>Product:</strong> ${order.productName}</p>
+                            <p><strong>Quantity:</strong> ${order.quantity}</p>
+                            <p><strong>Amount:</strong> ${order.amount}</p>
+                            <p><strong>Time:</strong> <span class="time-stamp">${order.time}</span></p>
+                            <p><strong>Status:</strong> ${order.confirmed ? '<span class="status">Confirmed</span>' : 'Pending'}</p>
+                        </div>
+                        <div>
+                            ${!order.confirmed ? `
+                                <button class="confirm-btn" onclick="sendWhatsAppMessage('${order.phoneNumber}', '${generateWhatsAppMessage(order)}'); confirmOrder('${order.id}')">
+                                    WS Confirmation
+                                </button>
+                                <button class="delete-btn" onclick="deleteOrder('${order.id}', ${tab === 'clicked'})">
+                                    ❌ Delete
+                                </button>
+                            ` : ''}
+                        </div>
+                    </div>
+                </div>
             `).join('');
         }
-
-         Load orders initially and refresh periodically
-        async function loadOrders() {
-            ordersContainer.innerHTML = 'div class=loadingLoading orders...div';
-            const orders = await fetchOrders();
-            renderOrders(orders);
+        
+        // Switch between tabs
+        function switchTab(tab) {
+            currentTab = tab;
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelector(`.tab:nth-child(${tab === 'live' ? 1 : 2})`).classList.add('active');
+            renderOrders(tab);
         }
-
-         Initialize the app
+        
+        // Load orders initially
+        async function loadOrders() {
+            ordersContainer.innerHTML = '<div class="loading">Loading orders...</div>';
+            const fetchedOrders = await fetchOrders();
+            orders = fetchedOrders.filter(order => !order.confirmed);
+            renderOrders(currentTab);
+        }
+        
+        // Initialize the app
         loadOrders();
-        setInterval(loadOrders, 30000);  Refresh every 30 seconds
-    script
-body
-html
+    </script>
+</body>
+</html>
