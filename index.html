@@ -128,6 +128,18 @@
             from { opacity: 0; transform: translateY(20px); }
             to { opacity: 1; transform: translateY(0); }
         }
+        .clear-btn {
+            background-color: #6c757d;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-left: 10px;
+        }
+        .clear-btn:hover {
+            background-color: #5a6268;
+        }
     </style>
 </head>
 <body>
@@ -141,7 +153,10 @@
             <div class="tab" onclick="switchTab('clicked')">✅ Clicked Orders</div>
         </div>
         
-        <button class="refresh-btn" onclick="loadOrders()">🔄 Refresh Orders</button>
+        <div style="display: flex; justify-content: space-between; margin-bottom: 20px;">
+            <button class="refresh-btn" onclick="loadOrders()">🔄 Refresh Orders</button>
+            <button class="clear-btn" onclick="clearLocalStorage()">🗑️ Clear All Data</button>
+        </div>
         
         <div id="orders-container"></div>
     </div>
@@ -156,6 +171,44 @@
         let currentTab = 'live';
         let orders = [];
         let clickedOrders = [];
+        
+        // Storage keys
+        const STORAGE_KEYS = {
+            LIVE_ORDERS: 'hasra_live_orders',
+            CLICKED_ORDERS: 'hasra_clicked_orders'
+        };
+        
+        // Initialize from localStorage
+        function initializeFromStorage() {
+            const liveOrders = localStorage.getItem(STORAGE_KEYS.LIVE_ORDERS);
+            const clickedOrdersData = localStorage.getItem(STORAGE_KEYS.CLICKED_ORDERS);
+            
+            if (liveOrders) {
+                orders = JSON.parse(liveOrders);
+            }
+            
+            if (clickedOrdersData) {
+                clickedOrders = JSON.parse(clickedOrdersData);
+            }
+        }
+        
+        // Save to localStorage
+        function saveToLocalStorage() {
+            localStorage.setItem(STORAGE_KEYS.LIVE_ORDERS, JSON.stringify(orders));
+            localStorage.setItem(STORAGE_KEYS.CLICKED_ORDERS, JSON.stringify(clickedOrders));
+        }
+        
+        // Clear localStorage
+        function clearLocalStorage() {
+            if (confirm('Are you sure you want to clear all order data? This cannot be undone.')) {
+                localStorage.removeItem(STORAGE_KEYS.LIVE_ORDERS);
+                localStorage.removeItem(STORAGE_KEYS.CLICKED_ORDERS);
+                orders = [];
+                clickedOrders = [];
+                renderOrders(currentTab);
+                showNotification('All data cleared successfully');
+            }
+        }
         
         // Enhanced extraction function
         function extractField(text, field) {
@@ -291,6 +344,10 @@ Terima kasih.`;
                 setTimeout(() => {
                     orders.splice(orderIndex, 1);
                     clickedOrders.unshift(confirmedOrder);
+                    
+                    // Save to localStorage
+                    saveToLocalStorage();
+                    
                     renderOrders(currentTab);
                 }, 1000);
             }
@@ -309,6 +366,10 @@ Terima kasih.`;
                     orders.splice(orderIndex, 1);
                 }
             }
+            
+            // Save to localStorage
+            saveToLocalStorage();
+            
             renderOrders(currentTab);
         }
         
@@ -393,8 +454,23 @@ Terima kasih.`;
         // Load orders initially
         async function loadOrders() {
             ordersContainer.innerHTML = '<div class="loading">Loading orders...</div>';
+            
+            // Initialize from localStorage first
+            initializeFromStorage();
+            
+            // Fetch new orders from Telegram
             const fetchedOrders = await fetchOrders();
-            orders = fetchedOrders.filter(order => !order.confirmed);
+            
+            // Merge fetchedOrders with existing orders (avoid duplicates)
+            const existingOrderIds = orders.map(order => order.id);
+            const newOrders = fetchedOrders.filter(order => !existingOrderIds.includes(order.id));
+            
+            // Add new orders to the beginning of the orders array
+            orders = [...newOrders, ...orders];
+            
+            // Save the updated orders to localStorage
+            saveToLocalStorage();
+            
             renderOrders(currentTab);
         }
         
