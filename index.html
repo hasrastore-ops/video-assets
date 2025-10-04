@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hasra Store COD Orders</title>
+    <title>Hasra Store Order Management</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -12,7 +12,7 @@
             padding: 20px;
         }
         .container {
-            max-width: 800px;
+            max-width: 900px;
             margin: 0 auto;
         }
         header {
@@ -140,34 +140,145 @@
         .clear-btn:hover {
             background-color: #5a6268;
         }
+        .payment-badge {
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.75em;
+            font-weight: bold;
+            margin-left: 8px;
+            color: white;
+        }
+        .badge-cod {
+            background-color: #28a745;
+        }
+        .badge-online {
+            background-color: #ffc107;
+            color: #212529;
+        }
+        .status-dropdown {
+            padding: 5px;
+            border-radius: 4px;
+            border: 1px solid #ccc;
+        }
+        /* Styles for the Profit Tab */
+        .profit-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .profit-table th, .profit-table td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        .profit-table th {
+            background-color: #007bff;
+            color: white;
+            font-weight: bold;
+        }
+        .profit-table tr:nth-child(even) {
+            background-color: #f2f2f2;
+        }
+        .profit-table .profit-positive {
+            color: #28a745;
+            font-weight: bold;
+        }
+        .profit-table .profit-negative {
+            color: #dc3545;
+            font-weight: bold;
+        }
+        .ad-cost-input {
+            width: 80px;
+            padding: 5px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            text-align: right;
+        }
+        .export-btn {
+            background-color: #28a745;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-left: 10px;
+        }
+        .export-btn:hover {
+            background-color: #218838;
+        }
+        .controls-container {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 20px;
+        }
+        .summary-card {
+            background: white;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .summary-title {
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #007bff;
+        }
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+        .summary-item {
+            text-align: center;
+        }
+        .summary-value {
+            font-size: 1.5em;
+            font-weight: bold;
+        }
+        .summary-label {
+            color: #666;
+            font-size: 0.9em;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>Hasra Store COD Orders</h1>
+            <h1>Hasra Store Order Management</h1>
         </header>
         
         <div class="tabs">
             <div class="tab active" onclick="switchTab('live')">🔴 Live Orders</div>
             <div class="tab" onclick="switchTab('clicked')">✅ Clicked Orders</div>
+            <div class="tab" onclick="switchTab('profit')">💰 Daily Profit</div>
         </div>
         
-        <div style="display: flex; justify-content: space-between; margin-bottom: 20px;">
-            <button class="refresh-btn" onclick="loadOrders()">🔄 Refresh Orders</button>
+        <div class="controls-container">
+            <div>
+                <button class="refresh-btn" onclick="loadOrders()">🔄 Refresh Orders</button>
+                <button class="export-btn" onclick="exportToCSV()">📊 Export to CSV</button>
+            </div>
             <button class="clear-btn" onclick="clearLocalStorage()">🗑️ Clear All Data</button>
         </div>
         
         <div id="orders-container"></div>
+        <div id="profit-container" style="display: none;"></div>
     </div>
     <script>
         // Configuration
         const TELEGRAM_BOT_TOKEN = '8426239312:AAHhnTlGYJHgsi9ujCknns-8f9Su0b8ZEOM';
         const TELEGRAM_CHAT_ID = '642142575';
-        const MY_PHONE_NUMBER = '601127412402';
+        
+        // Profit Calculation Constants
+        const PRICES = { COD: 102.90, ONLINE: 95.90 };
+        const COSTS = { COD: 52.00, ONLINE: 46.00 };
         
         // DOM elements
         const ordersContainer = document.getElementById('orders-container');
+        const profitContainer = document.getElementById('profit-container');
         let currentTab = 'live';
         let orders = [];
         let clickedOrders = [];
@@ -175,8 +286,62 @@
         // Storage keys
         const STORAGE_KEYS = {
             LIVE_ORDERS: 'hasra_live_orders',
-            CLICKED_ORDERS: 'hasra_clicked_orders'
+            CLICKED_ORDERS: 'hasra_clicked_orders',
+            LAST_UPDATE_ID: 'hasra_last_update_id',
+            DAILY_PROFIT_DATA: 'hasra_daily_profit_data'
         };
+        
+        // Helper function to format currency
+        function formatCurrency(value) {
+            return `RM ${value.toFixed(2)}`;
+        }
+
+        // Initialize and manage profit data
+        function initializeProfitData() {
+            let profitData = JSON.parse(localStorage.getItem(STORAGE_KEYS.DAILY_PROFIT_DATA) || '[]');
+            const today = new Date().toISOString().split('T')[0];
+            const sevenDaysAgo = new Date();
+            sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+            // Prune old data
+            profitData = profitData.filter(d => d.date >= sevenDaysAgo.toISOString().split('T')[0]);
+
+            // Ensure entries for the last 7 days exist
+            for (let i = 0; i < 7; i++) {
+                const date = new Date();
+                date.setDate(date.getDate() - i);
+                const dateStr = date.toISOString().split('T')[0];
+                if (!profitData.find(d => d.date === dateStr)) {
+                    profitData.push({
+                        date: dateStr,
+                        sales: { cod: 0, online: 0 },
+                        adCost: 0
+                    });
+                }
+            }
+            
+            localStorage.setItem(STORAGE_KEYS.DAILY_PROFIT_DATA, JSON.stringify(profitData));
+        }
+
+        // Update sales when an order is confirmed
+        function recordSaleForProfit(order) {
+            if (order.isCountedForProfit) return; // Avoid double counting
+
+            const today = new Date().toISOString().split('T')[0];
+            let profitData = JSON.parse(localStorage.getItem(STORAGE_KEYS.DAILY_PROFIT_DATA) || '[]');
+            const dayData = profitData.find(d => d.date === today);
+
+            if (dayData) {
+                if (order.paymentType === 'COD') {
+                    dayData.sales.cod++;
+                } else if (order.paymentType === 'ONLINE') {
+                    dayData.sales.online++;
+                }
+                localStorage.setItem(STORAGE_KEYS.DAILY_PROFIT_DATA, JSON.stringify(profitData));
+                order.isCountedForProfit = true; // Mark as counted
+                saveToLocalStorage(); // Persist the change to the order itself
+            }
+        }
         
         // Initialize from localStorage
         function initializeFromStorage() {
@@ -203,6 +368,8 @@
             if (confirm('Are you sure you want to clear all order data? This cannot be undone.')) {
                 localStorage.removeItem(STORAGE_KEYS.LIVE_ORDERS);
                 localStorage.removeItem(STORAGE_KEYS.CLICKED_ORDERS);
+                localStorage.removeItem(STORAGE_KEYS.LAST_UPDATE_ID);
+                localStorage.removeItem(STORAGE_KEYS.DAILY_PROFIT_DATA);
                 orders = [];
                 clickedOrders = [];
                 renderOrders(currentTab);
@@ -227,28 +394,42 @@
         }
         
         // Function to fetch orders from Telegram
-        async function fetchOrders() {
+        async function fetchOrders(offset = 0) {
             try {
-                const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getUpdates?chat_id=${TELEGRAM_CHAT_ID}&limit=100&allowed_updates=["message"]`);
+                const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getUpdates?offset=${offset}&limit=100&allowed_updates=["message"]`);
                 const data = await response.json();
                 
                 if (!data.result || !Array.isArray(data.result)) {
-                    return [];
+                    return { orders: [], lastUpdateId: offset };
                 }
                 
-                return data.result
+                const parsedOrders = data.result
                     .map(update => update.message)
                     .filter(msg => msg && msg.text && msg.text.includes('PESANAN BARU'))
                     .map(parseOrderFromMessage);
+                
+                const lastUpdateId = data.result.length > 0 
+                    ? Math.max(...data.result.map(u => u.update_id))
+                    : offset;
+
+                return { orders: parsedOrders, lastUpdateId: lastUpdateId };
             } catch (error) {
                 console.error('Error fetching orders:', error);
-                return [];
+                return { orders: [], lastUpdateId: offset };
             }
         }
         
-        // Parse order information from Telegram message
+        // Parse order information and detect payment type
         function parseOrderFromMessage(message) {
             const text = message.text || "";
+            const paymentTypeField = extractField(text, 'JENIS PEMBAYARAN');
+            let paymentType = 'UNKNOWN';
+
+            if (paymentTypeField.toUpperCase() === 'COD') {
+                paymentType = 'COD';
+            } else if (paymentTypeField.toUpperCase() === 'ONLINE PAYMENT' || text.includes('Menunggu Pembayaran')) {
+                paymentType = 'ONLINE';
+            }
             
             return {
                 id: message.message_id?.toString() || "unknown",
@@ -260,15 +441,17 @@
                 address: extractField(text, 'Alamat') || "No Address",
                 postcode: extractField(text, 'Poskod') || "00000",
                 state: extractField(text, 'Negeri') || "No State",
-                paymentType: extractField(text, 'JENIS PEMBAYARAN') || "COD",
+                paymentType: paymentType,
                 time: extractField(text, 'MASA') || new Date().toLocaleString(),
-                confirmed: false
+                status: 'Pending Confirmation', // Default status
+                isCountedForProfit: false // Flag to prevent double counting
             };
         }
         
-        // Generate WhatsApp message
+        // Generate different WhatsApp messages based on payment type
         function generateWhatsAppMessage(order) {
-            return `📢 PENGESAHAN PESANAN COD 📢
+            if (order.paymentType === 'COD') {
+                return `📢 PENGESAHAN PESANAN COD 📢
 Assalamualaikum/Salam Sejahtera ${order.customerName},
 
 Kami telah menerima pesanan anda seperti berikut:
@@ -276,13 +459,33 @@ Kami telah menerima pesanan anda seperti berikut:
 🔢 Kuantiti: ${order.quantity}
 💰 Jumlah: ${order.amount}
 🏠 Alamat Penghantaran:
-${order.address}
+ ${order.address}, ${order.postcode}, ${order.state}
 
 ⚠️ Ini adalah pesanan Bayar Tunai Semasa Penghantaran (COD).
 Sila balas 'YA' atau 'YES' untuk mengesahkan pesanan ini.
 
 ⏰ Sila sahkan dalam masa 24 jam.
 Terima kasih.`;
+            } else if (order.paymentType === 'ONLINE') {
+                return `📢 PENGESAHAN PESANAN 📢
+Assalamualaikum/Salam Sejahtera ${order.customerName},
+Saya Arif, Staff HasraStore.
+
+Kami telah menerima pesanan anda seperti berikut:
+📦 Produk: ${order.productName}
+🔢 Kuantiti: ${order.quantity}
+💰 Jumlah: ${order.amount}
+🏠 Alamat Penghantaran:
+ ${order.address}
+
+⚠️ Menunggu Pembayaran
+Sila balas "QR" untuk pembayaran mengunakan QR.
+Balas "bank" untuk bank transfer
+
+⏰ Sila sahkan dalam masa 24 jam.
+Terima kasih..`;
+            }
+            return `Hello ${order.customerName}, we have received your order for ${order.productName}. We will contact you shortly.`;
         }
         
         // Format phone number for WhatsApp
@@ -296,31 +499,25 @@ Terima kasih.`;
             const formattedPhone = formatPhoneNumber(phone);
             const encodedMessage = encodeURIComponent(message);
             
-            // Use WhatsApp Business URL format
             const whatsappUrl = `https://wa.me/${formattedPhone}?text=${encodedMessage}`;
             
-            // Create a temporary link element and trigger a click
             const link = document.createElement('a');
             link.href = whatsappUrl;
             link.target = '_blank';
             link.rel = 'noopener noreferrer';
             
-            // Add to DOM and click
             document.body.appendChild(link);
             link.click();
             
-            // Remove from DOM after a short delay
             setTimeout(() => {
                 document.body.removeChild(link);
             }, 100);
             
-            // Show notification
             showNotification('Opening WhatsApp...');
         }
         
         // Show notification
         function showNotification(message) {
-            // Remove existing notifications
             const existingNotifications = document.querySelectorAll('.notification');
             existingNotifications.forEach(n => n.remove());
             
@@ -330,30 +527,26 @@ Terima kasih.`;
             
             document.body.appendChild(notification);
             
-            // Auto-remove notification after 5 seconds
             setTimeout(() => {
                 notification.remove();
             }, 5000);
         }
         
-        // Confirm order function
-        function confirmOrder(orderId) {
-            const orderIndex = orders.findIndex(order => order.id === orderId);
-            if (orderIndex !== -1) {
-                const confirmedOrder = orders[orderIndex];
-                confirmedOrder.confirmed = true;
-                
-                // Move to clickedOrders after a short delay to ensure WhatsApp has time to open
-                setTimeout(() => {
-                    orders.splice(orderIndex, 1);
-                    clickedOrders.unshift(confirmedOrder);
-                    
-                    // Save to localStorage
-                    saveToLocalStorage();
-                    
-                    renderOrders(currentTab);
-                }, 1000);
+        // Update order status and record sale
+        function updateOrderStatus(orderId, newStatus) {
+            let order = getOrderById(orderId);
+            if (!order) return;
+
+            const previousStatus = order.status;
+            order.status = newStatus;
+
+            // If order is being confirmed for the first time, record the sale
+            if (newStatus === 'Confirmed / Paid' && previousStatus !== 'Confirmed / Paid') {
+                recordSaleForProfit(order);
             }
+            
+            saveToLocalStorage();
+            renderOrders(currentTab);
         }
         
         // Delete order function
@@ -370,19 +563,14 @@ Terima kasih.`;
                 }
             }
             
-            // Save to localStorage
             saveToLocalStorage();
-            
             renderOrders(currentTab);
         }
         
         // Get order by ID
         function getOrderById(orderId) {
-            // First check in orders
             let order = orders.find(o => o.id === orderId);
             if (order) return order;
-            
-            // Then check in clickedOrders
             return clickedOrders.find(o => o.id === orderId);
         }
         
@@ -397,14 +585,70 @@ Terima kasih.`;
             
             try {
                 sendWhatsAppMessage(order.phoneNumber, generateWhatsAppMessage(order));
-                confirmOrder(orderId);
+                // The old confirmOrder logic is now handled by the status dropdown
+                // We can manually set the status to "Confirmed / Paid" if desired
+                updateOrderStatus(orderId, 'Confirmed / Paid');
             } catch (error) {
-                console.error('Error handling WhatsApp confirmation:', error);
+                console.error('Error handling WhatsApp action:', error);
                 showNotification('Error sending WhatsApp message. Please try again.');
             }
         }
         
-        // Render orders based on current tab
+        // Export to CSV function
+        function exportToCSV() {
+            let allOrders = [...orders, ...clickedOrders];
+            
+            if (allOrders.length === 0) {
+                showNotification('No orders to export');
+                return;
+            }
+            
+            // Sort orders by date (newest first)
+            allOrders.sort((a, b) => {
+                const dateA = new Date(a.time);
+                const dateB = new Date(b.time);
+                return dateB - dateA;
+            });
+            
+            // Create CSV content
+            let csvContent = "Order ID,Customer Name,Phone Number,Product,Quantity,Amount,Payment Type,Status,Address,Postcode,State,Time\n";
+            
+            allOrders.forEach(order => {
+                const row = [
+                    order.id,
+                    `"${order.customerName}"`,
+                    order.phoneNumber,
+                    `"${order.productName}"`,
+                    order.quantity,
+                    order.amount,
+                    order.paymentType,
+                    order.status,
+                    `"${order.address}"`,
+                    order.postcode,
+                    order.state,
+                    `"${order.time}"`
+                ];
+                csvContent += row.join(',') + '\n';
+            });
+            
+            // Create a blob and download link
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            
+            const date = new Date().toISOString().split('T')[0];
+            link.setAttribute('href', url);
+            link.setAttribute('download', `hasra_orders_${date}.csv`);
+            link.style.visibility = 'hidden';
+            
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            showNotification('Orders exported to CSV successfully');
+        }
+        
+        // Render orders with payment type badges and dynamic buttons
         function renderOrders(tab) {
             const targetOrders = tab === 'live' ? orders : clickedOrders;
             
@@ -415,66 +659,231 @@ Terima kasih.`;
                 return;
             }
             
-            // Sort orders by ID (newest first)
             const sortedOrders = [...targetOrders].sort((a, b) => b.id.localeCompare(a.id));
             
-            ordersContainer.innerHTML = sortedOrders.map(order => `
-                <div class="order-card" data-order-id="${order.id}">
-                    <div class="order-info">
-                        <div class="order-details">
-                            <h3>${order.customerName}</h3>
-                            <p><strong>Order #:</strong> <span class="order-number">${order.id}</span></p>
-                            <p><strong>Phone:</strong> ${order.phoneNumber}</p>
-                            <p><strong>Product:</strong> ${order.productName}</p>
-                            <p><strong>Quantity:</strong> ${order.quantity}</p>
-                            <p><strong>Amount:</strong> ${order.amount}</p>
-                            <p><strong>Time:</strong> <span class="time-stamp">${order.time}</span></p>
-                            <p><strong>Status:</strong> ${order.confirmed ? '<span class="status">Confirmed</span>' : 'Pending'}</p>
+            ordersContainer.innerHTML = sortedOrders.map(order => {
+                let paymentBadge = '';
+                let buttonText = '';
+                let buttonDisabled = '';
+
+                if (order.paymentType === 'COD') {
+                    paymentBadge = '<span class="payment-badge badge-cod">COD</span>';
+                    buttonText = 'WS Confirmation';
+                } else if (order.paymentType === 'ONLINE') {
+                    paymentBadge = '<span class="payment-badge badge-online">ONLINE</span>';
+                    buttonText = 'Request Payment';
+                } else {
+                    paymentBadge = '<span class="payment-badge" style="background-color: #6c757d;">UNKNOWN</span>';
+                    buttonText = 'Invalid Type';
+                    buttonDisabled = 'disabled';
+                }
+
+                return `
+                    <div class="order-card" data-order-id="${order.id}">
+                        <div class="order-info">
+                            <div class="order-details">
+                                <h3>${order.customerName}</h3>
+                                <p><strong>Order #:</strong> <span class="order-number">${order.id}</span>${paymentBadge}</p>
+                                <p><strong>Phone:</strong> ${order.phoneNumber}</p>
+                                <p><strong>Product:</strong> ${order.productName}</p>
+                                <p><strong>Quantity:</strong> ${order.quantity}</p>
+                                <p><strong>Amount:</strong> ${order.amount}</p>
+                                <p><strong>Time:</strong> <span class="time-stamp">${order.time}</span></p>
+                                <p>
+                                    <strong>Status:</strong> 
+                                    <select class="status-dropdown" onchange="updateOrderStatus('${order.id}', this.value)">
+                                        <option value="Pending Confirmation" ${order.status === 'Pending Confirmation' ? 'selected' : ''}>Pending Confirmation</option>
+                                        <option value="Awaiting Payment" ${order.status === 'Awaiting Payment' ? 'selected' : ''}>Awaiting Payment</option>
+                                        <option value="Confirmed / Paid" ${order.status === 'Confirmed / Paid' ? 'selected' : ''}>Confirmed / Paid</option>
+                                        <option value="Preparing" ${order.status === 'Preparing' ? 'selected' : ''}>Preparing</option>
+                                        <option value="Shipped" ${order.status === 'Shipped' ? 'selected' : ''}>Shipped</option>
+                                        <option value="Delivered" ${order.status === 'Delivered' ? 'selected' : ''}>Delivered</option>
+                                        <option value="Cancelled" ${order.status === 'Cancelled' ? 'selected' : ''}>Cancelled</option>
+                                    </select>
+                                </p>
+                            </div>
+                            <div>
+                                ${!order.confirmed ? `
+                                    <button class="confirm-btn" onclick="handleWhatsAppConfirmation('${order.id}')" ${buttonDisabled}>
+                                        ${buttonText}
+                                    </button>
+                                    <button class="delete-btn" onclick="deleteOrder('${order.id}', ${tab === 'clicked'})">
+                                        ❌ Delete
+                                    </button>
+                                ` : ''}
+                            </div>
                         </div>
-                        <div>
-                            ${!order.confirmed ? `
-                                <button class="confirm-btn" onclick="handleWhatsAppConfirmation('${order.id}')">
-                                    WS Confirmation
-                                </button>
-                                <button class="delete-btn" onclick="deleteOrder('${order.id}', ${tab === 'clicked'})">
-                                    ❌ Delete
-                                </button>
-                            ` : ''}
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        // Render the Daily Profit Tab
+        function renderProfitTab() {
+            ordersContainer.style.display = 'none';
+            profitContainer.style.display = 'block';
+
+            let profitData = JSON.parse(localStorage.getItem(STORAGE_KEYS.DAILY_PROFIT_DATA) || '[]');
+            // Sort by date descending
+            profitData.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+            // Calculate totals
+            let totalRevenue = 0;
+            let totalCosts = 0;
+            let totalAdCost = 0;
+            let totalNetProfit = 0;
+            let totalCodSales = 0;
+            let totalOnlineSales = 0;
+
+            profitData.forEach(day => {
+                const codRevenue = day.sales.cod * PRICES.COD;
+                const onlineRevenue = day.sales.online * PRICES.ONLINE;
+                totalRevenue += codRevenue + onlineRevenue;
+
+                const codCost = day.sales.cod * COSTS.COD;
+                const onlineCost = day.sales.online * COSTS.ONLINE;
+                totalCosts += codCost + onlineCost;
+                
+                totalAdCost += day.adCost;
+                totalNetProfit += (codRevenue + onlineRevenue) - (codCost + onlineCost) - day.adCost;
+                totalCodSales += day.sales.cod;
+                totalOnlineSales += day.sales.online;
+            });
+
+            // Create summary card
+            let summaryHTML = `
+                <div class="summary-card">
+                    <div class="summary-title">7-Day Summary</div>
+                    <div class="summary-grid">
+                        <div class="summary-item">
+                            <div class="summary-value">${totalCodSales + totalOnlineSales}</div>
+                            <div class="summary-label">Total Sales</div>
+                        </div>
+                        <div class="summary-item">
+                            <div class="summary-value">${formatCurrency(totalRevenue)}</div>
+                            <div class="summary-label">Total Revenue</div>
+                        </div>
+                        <div class="summary-item">
+                            <div class="summary-value">${formatCurrency(totalCosts)}</div>
+                            <div class="summary-label">Total Costs</div>
+                        </div>
+                        <div class="summary-item">
+                            <div class="summary-value">${formatCurrency(totalAdCost)}</div>
+                            <div class="summary-label">Total Ad Cost</div>
+                        </div>
+                        <div class="summary-item">
+                            <div class="summary-value ${totalNetProfit >= 0 ? 'profit-positive' : 'profit-negative'}">${formatCurrency(totalNetProfit)}</div>
+                            <div class="summary-label">Net Profit</div>
                         </div>
                     </div>
                 </div>
-            `).join('');
+            `;
+
+            // Create profit table
+            let tableHTML = `
+                <table class="profit-table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>COD Sales</th>
+                            <th>Online Sales</th>
+                            <th>Total Revenue</th>
+                            <th>Total Costs</th>
+                            <th>Ad Cost</th>
+                            <th>Net Profit</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            profitData.forEach(day => {
+                const codRevenue = day.sales.cod * PRICES.COD;
+                const onlineRevenue = day.sales.online * PRICES.ONLINE;
+                const totalRevenue = codRevenue + onlineRevenue;
+
+                const codCost = day.sales.cod * COSTS.COD;
+                const onlineCost = day.sales.online * COSTS.ONLINE;
+                const totalCosts = codCost + onlineCost;
+
+                const netProfit = totalRevenue - totalCosts - day.adCost;
+                const profitClass = netProfit >= 0 ? 'profit-positive' : 'profit-negative';
+
+                tableHTML += `
+                    <tr>
+                        <td>${new Date(day.date + 'T00:00:00').toLocaleDateString('en-MY', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })}</td>
+                        <td>${day.sales.cod}</td>
+                        <td>${day.sales.online}</td>
+                        <td>${formatCurrency(totalRevenue)}</td>
+                        <td>${formatCurrency(totalCosts)}</td>
+                        <td><input type="number" class="ad-cost-input" value="${day.adCost}" onchange="updateAdCost('${day.date}', this.value)" step="0.01"></td>
+                        <td class="${profitClass}">${formatCurrency(netProfit)}</td>
+                    </tr>
+                `;
+            });
+
+            tableHTML += `</tbody></table>`;
+            profitContainer.innerHTML = summaryHTML + tableHTML;
+        }
+
+        // Function to update ad cost
+        function updateAdCost(date, value) {
+            let profitData = JSON.parse(localStorage.getItem(STORAGE_KEYS.DAILY_PROFIT_DATA) || '[]');
+            const dayData = profitData.find(d => d.date === date);
+            if (dayData) {
+                dayData.adCost = parseFloat(value) || 0;
+                localStorage.setItem(STORAGE_KEYS.DAILY_PROFIT_DATA, JSON.stringify(profitData));
+                renderProfitTab(); // Re-render to show updated profit
+                showNotification('Ad cost updated');
+            }
         }
         
         // Switch between tabs
         function switchTab(tab) {
             currentTab = tab;
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-            document.querySelector(`.tab:nth-child(${tab === 'live' ? 1 : 2})`).classList.add('active');
-            renderOrders(tab);
+            document.querySelector(`.tab:nth-child(${tab === 'live' ? 1 : tab === 'clicked' ? 2 : 3})`).classList.add('active');
+
+            // Hide all containers first
+            ordersContainer.style.display = 'none';
+            profitContainer.style.display = 'none';
+
+            if (tab === 'profit') {
+                renderProfitTab();
+            } else {
+                ordersContainer.style.display = 'block';
+                renderOrders(tab);
+            }
         }
         
-        // Load orders initially
+        // Load orders initially and on refresh
         async function loadOrders() {
-            ordersContainer.innerHTML = '<div class="loading">Loading orders...</div>';
+            // Initialize profit data on every load to ensure it's up-to-date
+            initializeProfitData();
+
+            if (currentTab !== 'profit') {
+                ordersContainer.innerHTML = '<div class="loading">Loading orders...</div>';
+            }
             
-            // Initialize from localStorage first
             initializeFromStorage();
             
-            // Fetch new orders from Telegram
-            const fetchedOrders = await fetchOrders();
+            const lastUpdateId = parseInt(localStorage.getItem(STORAGE_KEYS.LAST_UPDATE_ID) || '0');
             
-            // Merge fetchedOrders with existing orders (avoid duplicates)
-            const existingOrderIds = orders.map(order => order.id);
-            const newOrders = fetchedOrders.filter(order => !existingOrderIds.includes(order.id));
+            const { orders: fetchedOrders, lastUpdateId: newLastUpdateId } = await fetchOrders(lastUpdateId + 1);
             
-            // Add new orders to the beginning of the orders array
-            orders = [...newOrders, ...orders];
+            if (fetchedOrders.length > 0) {
+                orders = [...fetchedOrders, ...orders];
+                localStorage.setItem(STORAGE_KEYS.LAST_UPDATE_ID, newLastUpdateId.toString());
+                showNotification(`${fetchedOrders.length} new order(s) loaded!`);
+            }
             
-            // Save the updated orders to localStorage
             saveToLocalStorage();
             
-            renderOrders(currentTab);
+            // Re-render the current view
+            if (currentTab === 'profit') {
+                renderProfitTab();
+            } else {
+                renderOrders(currentTab);
+            }
         }
         
         // Initialize the app
