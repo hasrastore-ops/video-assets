@@ -66,13 +66,6 @@
         .confirm-btn:hover {
             background-color: #0056b3;
         }
-        .confirm-btn.confirmed {
-            background-color: #28a745;
-        }
-        .status {
-            color: #28a745;
-            font-weight: bold;
-        }
         .delete-btn {
             background-color: #dc3545;
             color: white;
@@ -89,7 +82,6 @@
             padding: 8px 16px;
             border-radius: 5px;
             cursor: pointer;
-            margin-bottom: 20px;
         }
         .refresh-btn:hover {
             background-color: #138496;
@@ -116,7 +108,7 @@
             position: fixed;
             bottom: 20px;
             right: 20px;
-            background-color: #dc3545; /* Changed to red for errors */
+            background-color: #dc3545;
             color: white;
             padding: 10px 15px;
             border-radius: 5px;
@@ -138,7 +130,6 @@
             padding: 8px 16px;
             border-radius: 5px;
             cursor: pointer;
-            margin-left: 10px;
         }
         .clear-btn:hover {
             background-color: #5a6268;
@@ -259,12 +250,18 @@
             <div class="tab" onclick="switchTab('profit')">💰 Daily Profit</div>
         </div>
         
-        <div class="controls-container">
+        <!-- Controls for Orders Tab -->
+        <div id="orders-controls" class="controls-container">
             <div>
                 <button class="refresh-btn" onclick="loadOrders()">🔄 Refresh Orders</button>
                 <button class="export-btn" onclick="exportToCSV()">📊 Export to CSV</button>
             </div>
             <button class="clear-btn" onclick="clearLocalStorage()">🗑️ Clear All Data</button>
+        </div>
+
+        <!-- Controls for Profit Tab -->
+        <div id="profit-controls" class="controls-container" style="display: none;">
+            <button class="refresh-btn" onclick="refreshProfitTab()">🔄 Refresh Profit Data</button>
         </div>
         
         <div id="orders-container"></div>
@@ -290,6 +287,8 @@
         // DOM elements
         const ordersContainer = document.getElementById('orders-container');
         const profitContainer = document.getElementById('profit-container');
+        const ordersControls = document.getElementById('orders-controls');
+        const profitControls = document.getElementById('profit-controls');
         let currentTab = 'live';
         let orders = [];
         let clickedOrders = [];
@@ -330,6 +329,26 @@
             }
             
             localStorage.setItem(STORAGE_KEYS.DAILY_PROFIT_DATA, JSON.stringify(profitData));
+        }
+
+        // *** NEW: Function to remove a sale from profit tracking ***
+        function removeSaleFromProfit(order) {
+            if (!order.isCountedForProfit) return; // Nothing to remove
+
+            const orderDate = new Date(order.time).toISOString().split('T')[0];
+            let profitData = JSON.parse(localStorage.getItem(STORAGE_KEYS.DAILY_PROFIT_DATA) || '[]');
+            const dayData = profitData.find(d => d.date === orderDate);
+
+            if (dayData) {
+                if (order.paymentType === 'COD') {
+                    dayData.sales.cod = Math.max(0, dayData.sales.cod - 1); // Ensure it doesn't go below 0
+                } else if (order.paymentType === 'ONLINE') {
+                    dayData.sales.online = Math.max(0, dayData.sales.online - 1);
+                }
+                localStorage.setItem(STORAGE_KEYS.DAILY_PROFIT_DATA, JSON.stringify(profitData));
+                order.isCountedForProfit = false; // Un-mark the order
+                saveToLocalStorage();
+            }
         }
 
         function recordSaleForProfit(order) {
@@ -418,7 +437,6 @@
                 return { orders: parsedOrders, lastUpdateId: lastUpdateId };
             } catch (error) {
                 console.error('Error fetching orders:', error);
-                // *** IMPROVED ERROR HANDLING ***
                 if (error.message.includes("Could not establish connection")) {
                     showNotification('Connection blocked by a browser extension. Please disable ad-blockers or use an incognito window.');
                 } else {
@@ -533,9 +551,10 @@ Terima kasih..`;
             
             setTimeout(() => {
                 notification.remove();
-            }, 7000); // Show for a bit longer for errors
+            }, 7000);
         }
         
+        // *** CORRECTED: This function now handles adding and removing sales ***
         function updateOrderStatus(orderId, newStatus) {
             let order = getOrderById(orderId);
             if (!order) return;
@@ -543,9 +562,17 @@ Terima kasih..`;
             const previousStatus = order.status;
             order.status = newStatus;
 
-            if (newStatus === 'Confirmed / Paid' && previousStatus !== 'Confirmed / Paid') {
+            // --- SALE COUNTING LOGIC ---
+            if (previousStatus === 'Confirmed / Paid' && newStatus !== 'Confirmed / Paid') {
+                // Status changed AWAY from 'Confirmed / Paid', so remove the sale.
+                removeSaleFromProfit(order);
+                showNotification('Sale removed from Daily Profit.', 'success');
+            } else if (previousStatus !== 'Confirmed / Paid' && newStatus === 'Confirmed / Paid') {
+                // Status changed TO 'Confirmed / Paid', so add the sale.
                 recordSaleForProfit(order);
+                showNotification('Sale recorded for Daily Profit!', 'success');
             }
+            // --- END SALE COUNTING LOGIC ---
             
             saveToLocalStorage();
             renderOrders(currentTab);
@@ -555,6 +582,11 @@ Terima kasih..`;
             if (isClicked) {
                 const orderIndex = clickedOrders.findIndex(order => order.id === orderId);
                 if (orderIndex !== -1) {
+                    const orderToDelete = clickedOrders[orderIndex];
+                    // If the order was counted for profit, remove it before deleting
+                    if(orderToDelete.isCountedForProfit) {
+                        removeSaleFromProfit(orderToDelete);
+                    }
                     clickedOrders.splice(orderIndex, 1);
                 }
             } else {
@@ -584,7 +616,16 @@ Terima kasih..`;
             
             try {
                 sendWhatsAppMessage(order.phoneNumber, generateWhatsAppMessage(order));
-                updateOrderStatus(orderId, 'Confirmed / Paid');
+                
+                const orderIndex = orders.findIndex(o => o.id === orderId);
+                if (orderIndex !== -1) {
+                    const [clickedOrder] = orders.splice(orderIndex, 1);
+                    clickedOrders.unshift(clickedOrder);
+                    
+                    saveToLocalStorage();
+                    renderOrders(currentTab);
+                    showNotification('Order moved to Clicked Orders.', 'success');
+                }
             } catch (error) {
                 console.error('Error handling WhatsApp action:', error);
                 showNotification('Error sending WhatsApp message. Please try again.');
@@ -695,14 +736,14 @@ Terima kasih..`;
                                 </p>
                             </div>
                             <div>
-                                ${!order.confirmed ? `
+                                ${tab === 'live' ? `
                                     <button class="confirm-btn" onclick="handleWhatsAppConfirmation('${order.id}')" ${buttonDisabled}>
                                         ${buttonText}
                                     </button>
-                                    <button class="delete-btn" onclick="deleteOrder('${order.id}', ${tab === 'clicked'})">
-                                        ❌ Delete
-                                    </button>
                                 ` : ''}
+                                <button class="delete-btn" onclick="deleteOrder('${order.id}', ${tab === 'clicked'})">
+                                    ❌ Delete
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -812,6 +853,13 @@ Terima kasih..`;
             profitContainer.innerHTML = summaryHTML + tableHTML;
         }
 
+        // *** NEW: Function to refresh the profit tab ***
+        function refreshProfitTab() {
+            initializeProfitData(); // Re-initialize to ensure the last 7 days are present
+            renderProfitTab();
+            showNotification('Profit data refreshed.', 'success');
+        }
+
         function updateAdCost(date, value) {
             let profitData = JSON.parse(localStorage.getItem(STORAGE_KEYS.DAILY_PROFIT_DATA) || '[]');
             const dayData = profitData.find(d => d.date === date);
@@ -828,12 +876,17 @@ Terima kasih..`;
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             document.querySelector(`.tab:nth-child(${tab === 'live' ? 1 : tab === 'clicked' ? 2 : 3})`).classList.add('active');
 
+            // Hide all containers and controls first
             ordersContainer.style.display = 'none';
             profitContainer.style.display = 'none';
+            ordersControls.style.display = 'none';
+            profitControls.style.display = 'none';
 
             if (tab === 'profit') {
+                profitControls.style.display = 'flex';
                 renderProfitTab();
             } else {
+                ordersControls.style.display = 'flex';
                 ordersContainer.style.display = 'block';
                 renderOrders(tab);
             }
@@ -868,7 +921,6 @@ Terima kasih..`;
                 localStorage.setItem(STORAGE_KEYS.LAST_UPDATE_ID, newLastUpdateId.toString());
                 showNotification(`${fetchedOrders.length} new order(s) loaded!`, 'success');
             } else {
-                // Only show "no new orders" if it's not the first time loading
                 if (hasPerformedInitialSync) {
                    showNotification('No new orders found.', 'success');
                 }
