@@ -403,9 +403,10 @@
                     return { orders: [], lastUpdateId: offset };
                 }
                 
+                // *** CORRECTED: Filter for both COD and Online payment messages ***
                 const parsedOrders = data.result
                     .map(update => update.message)
-                    .filter(msg => msg && msg.text && msg.text.includes('PESANAN BARU'))
+                    .filter(msg => msg && msg.text && (msg.text.includes('PESANAN BARU') || msg.text.includes('PENGESAHAN PESANAN')))
                     .map(parseOrderFromMessage);
                 
                 const lastUpdateId = data.result.length > 0 
@@ -540,7 +541,6 @@ Terima kasih..`;
             const previousStatus = order.status;
             order.status = newStatus;
 
-            // If order is being confirmed for the first time, record the sale
             if (newStatus === 'Confirmed / Paid' && previousStatus !== 'Confirmed / Paid') {
                 recordSaleForProfit(order);
             }
@@ -585,8 +585,6 @@ Terima kasih..`;
             
             try {
                 sendWhatsAppMessage(order.phoneNumber, generateWhatsAppMessage(order));
-                // The old confirmOrder logic is now handled by the status dropdown
-                // We can manually set the status to "Confirmed / Paid" if desired
                 updateOrderStatus(orderId, 'Confirmed / Paid');
             } catch (error) {
                 console.error('Error handling WhatsApp action:', error);
@@ -603,14 +601,12 @@ Terima kasih..`;
                 return;
             }
             
-            // Sort orders by date (newest first)
             allOrders.sort((a, b) => {
                 const dateA = new Date(a.time);
                 const dateB = new Date(b.time);
                 return dateB - dateA;
             });
             
-            // Create CSV content
             let csvContent = "Order ID,Customer Name,Phone Number,Product,Quantity,Amount,Payment Type,Status,Address,Postcode,State,Time\n";
             
             allOrders.forEach(order => {
@@ -631,7 +627,6 @@ Terima kasih..`;
                 csvContent += row.join(',') + '\n';
             });
             
-            // Create a blob and download link
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
             const url = URL.createObjectURL(blob);
             const link = document.createElement('a');
@@ -724,10 +719,8 @@ Terima kasih..`;
             profitContainer.style.display = 'block';
 
             let profitData = JSON.parse(localStorage.getItem(STORAGE_KEYS.DAILY_PROFIT_DATA) || '[]');
-            // Sort by date descending
             profitData.sort((a, b) => new Date(b.date) - new Date(a.date));
 
-            // Calculate totals
             let totalRevenue = 0;
             let totalCosts = 0;
             let totalAdCost = 0;
@@ -750,7 +743,6 @@ Terima kasih..`;
                 totalOnlineSales += day.sales.online;
             });
 
-            // Create summary card
             let summaryHTML = `
                 <div class="summary-card">
                     <div class="summary-title">7-Day Summary</div>
@@ -779,7 +771,6 @@ Terima kasih..`;
                 </div>
             `;
 
-            // Create profit table
             let tableHTML = `
                 <table class="profit-table">
                     <thead>
@@ -832,7 +823,7 @@ Terima kasih..`;
             if (dayData) {
                 dayData.adCost = parseFloat(value) || 0;
                 localStorage.setItem(STORAGE_KEYS.DAILY_PROFIT_DATA, JSON.stringify(profitData));
-                renderProfitTab(); // Re-render to show updated profit
+                renderProfitTab();
                 showNotification('Ad cost updated');
             }
         }
@@ -843,7 +834,6 @@ Terima kasih..`;
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             document.querySelector(`.tab:nth-child(${tab === 'live' ? 1 : tab === 'clicked' ? 2 : 3})`).classList.add('active');
 
-            // Hide all containers first
             ordersContainer.style.display = 'none';
             profitContainer.style.display = 'none';
 
@@ -855,30 +845,44 @@ Terima kasih..`;
             }
         }
         
-        // Load orders initially and on refresh
+        // *** CORRECTED: Load orders initially and on refresh ***
         async function loadOrders() {
-            // Initialize profit data on every load to ensure it's up-to-date
             initializeProfitData();
-
             if (currentTab !== 'profit') {
                 ordersContainer.innerHTML = '<div class="loading">Loading orders...</div>';
             }
-            
             initializeFromStorage();
             
-            const lastUpdateId = parseInt(localStorage.getItem(STORAGE_KEYS.LAST_UPDATE_ID) || '0');
-            
-            const { orders: fetchedOrders, lastUpdateId: newLastUpdateId } = await fetchOrders(lastUpdateId + 1);
+            let fetchedOrders = [];
+            let newLastUpdateId = 0;
+
+            // *** CORRECTED: Check if an initial sync has ever been performed ***
+            const hasPerformedInitialSync = localStorage.getItem(STORAGE_KEYS.LAST_UPDATE_ID) !== null;
+
+            if (!hasPerformedInitialSync) {
+                // Perform a full initial sync by fetching the last 100 messages without an offset
+                showNotification('Performing initial sync, please wait...');
+                const result = await fetchOrders(); // Call without offset
+                fetchedOrders = result.orders;
+                newLastUpdateId = result.lastUpdateId;
+            } else {
+                // Perform an incremental update using the offset
+                const lastUpdateId = parseInt(localStorage.getItem(STORAGE_KEYS.LAST_UPDATE_ID) || '0');
+                const result = await fetchOrders(lastUpdateId + 1);
+                fetchedOrders = result.orders;
+                newLastUpdateId = result.lastUpdateId;
+            }
             
             if (fetchedOrders.length > 0) {
                 orders = [...fetchedOrders, ...orders];
                 localStorage.setItem(STORAGE_KEYS.LAST_UPDATE_ID, newLastUpdateId.toString());
                 showNotification(`${fetchedOrders.length} new order(s) loaded!`);
+            } else {
+                showNotification('No new orders found.');
             }
             
             saveToLocalStorage();
             
-            // Re-render the current view
             if (currentTab === 'profit') {
                 renderProfitTab();
             } else {
